@@ -1,0 +1,205 @@
+---
+title: A Multiple Regression Approach to Predict Bird Masses From Morphometric, Fecundity,
+  and Behavioral Data
+author: "Ethan Ashby"
+date: "3/27/2020"
+output:
+  pdf_document: default
+  word_document: default
+subtitle: Math158 Midterm Project
+---
+# Introduction
+Prediction of Avian body masses is important
+
+# Methods
+```{r, eval=T, echo=F, cache=T, include=F}
+library(tidyverse)
+library(MASS)
+library(DAAG)
+file<-("avian_ssd_jan07.txt")
+
+#eliminate -999 NA values
+data <- read.delim(file, sep="\t", header=TRUE, na.strings =c("-999", "-999.0"))
+data[data==-999]<-NA
+
+bird_characteristics<- data %>% dplyr::select(Family, Species_name, English_name, M_mass, F_mass, unsexed_mass, M_wing, F_wing, Unsexed_wing, M_tarsus, F_tarsus, Unsexed_tarsus, M_bill, F_bill, Unsexed_bill, M_tail, F_tail, Unsexed_tail, Clutch_size, Egg_mass, Mating_System, Display)
+
+tmp1<-bird_characteristics %>% dplyr::select(Family, Species_name, English_name, contains("M_"), Clutch_size, Egg_mass, Mating_System, Display) %>% mutate(sex="M")
+colnames(tmp1)<- gsub("M_", "", colnames(tmp1))
+tmp2<-bird_characteristics %>% dplyr::select(Family, Species_name, English_name, contains("F_"), Clutch_size, Egg_mass, Mating_System, Display) %>% mutate(sex="F")
+colnames(tmp2)<- gsub("F_", "", colnames(tmp2))
+tmp3<-bird_characteristics %>% dplyr::select(Family, Species_name, English_name, contains("Unsexed_"), Clutch_size, Egg_mass, Mating_System, Display) %>% mutate(sex="U")
+colnames(tmp3)<- gsub("Unsexed_|unsexed_", "", colnames(tmp3))
+
+bird_charac_encode<-rbind(tmp1, tmp2, tmp3)
+bird_charac_encode$Display<-as.factor(bird_charac_encode$Display)
+bird_charac_encode$Mating_System<-as.factor(bird_charac_encode$Mating_System)
+bird_charac_encode$sex<-as.factor(bird_charac_encode$sex)
+bird_charac_encode$Family<-as.factor(bird_charac_encode$Family)
+View(bird_charac_encode)
+
+#get complete cases
+bird_data<-bird_charac_encode[complete.cases(bird_charac_encode),]
+
+#fit full model and run summary of fit
+fit<-lm(mass~. -Species_name -English_name -Family, data=bird_data)
+summary(fit)
+layout(matrix(c(1,2,3,4),2,2))
+plot(fit)
+#Note normality of residuals may be a problem
+```
+
+```{r BOX COX, echo=F, eval=T, cache=T, message=F, fig.width=5, fig.height=5}
+#run boxcox and notice that lambda=0 suggesting log transformation of response
+boxcox(fit, data=bird_data)
+```
+
+```{r box-cox transform diagnostics and outlier removal, eval=T, echo=F, cache=T, include=F}
+box_fit<-lm(log(mass)~. -Species_name -English_name -Family, data=bird_data)
+layout(matrix(c(1,2,3,4),2,2))
+plot(box_fit)
+
+#####
+#Removing outliers
+#####
+
+#Outlying indivduals on Residuals vs Fitted and Residuals vs Leverage Plot are very large birds with unusual shapes (cranes & penguins), so we will omit these from the data we use to build the model
+
+bird_data_edit<-bird_data[! rownames(bird_data) %in% c("1019", "1014", "4815", "5473", "1672", "4820"),]
+
+new_box_fit<-lm(log(mass)~. -Species_name -English_name -Family, data=bird_data_edit)
+layout(matrix(c(1,2,3,4),2,2))
+plot(new_box_fit)
+```
+
+I built a model
+
+# Analysis
+I tested the model
+
+# Conclusion
+Birds are cool
+
+
+
+```{r, message=FALSE, echo=F, eval=F, cache=T}
+#####
+#Model Selection
+######
+
+#####
+#Transformations of Explanatory Variables
+#####
+library(lattice)
+library(gridExtra)
+library(grid)
+
+#LOG WING. wing and mass have 1-1 relationship so makes sense to log wing
+p1<-ggplot(bird_data_edit)+geom_point(aes(x=log(wing), y=log(mass)))+geom_smooth(aes(x=log(wing), y=log(mass)))
+#LOG Egg_mass
+p2<-ggplot(bird_data_edit)+geom_point(aes(x=log(Egg_mass), y=log(mass)))+geom_smooth(aes(x=log(Egg_mass), y=log(mass)))
+#LOG Tarsus figure out which are outliers and consider blocking out outliers
+p3<-ggplot(bird_data_edit)+geom_point(aes(x=log(tarsus), y=log(mass)))+geom_smooth(aes(x=log(tarsus), y=log(mass)))
+#LEAVE CLUTCH SIZE leave untransformed and understand how the different birds fit different niches
+p4<-ggplot(bird_data_edit)+geom_point(aes(x=Clutch_size, y=log(mass)))+geom_smooth(aes(x=Clutch_size, y=log(mass)))
+#LOG BILL
+p5<-ggplot(bird_data_edit)+geom_point(aes(x=log(bill), y=log(mass)))+geom_smooth(aes(x=log(bill), y=log(mass)))
+#LEAVE TAIL
+p6<-ggplot(bird_data_edit)+geom_point(aes(x=tail, y=log(mass)))+geom_smooth(aes(x=tail, y=log(mass)))
+grid.arrange(p1, p2, p3, p4, p5, p6, ncol=3)
+
+```
+
+```{r, eval=F, cache=T, echo=F}
+######
+#Transform Predictors
+#######
+
+#transform predictors and fit full model
+bird_data_transform<-bird_data %>% mutate(logmass=log(mass)) %>% mutate(logwing=log(wing)) %>% mutate(logegg=log(Egg_mass)) %>% mutate(logtarsus=log(tarsus)) %>% mutate(logbill=log(bill))
+
+fit_t<-lm(logmass~logwing+logegg+logtarsus+logbill+tail+Clutch_size+Mating_System+Display+sex, data=bird_data_transform)
+summary(fit_t)
+
+########
+#ANOVA Comparison of nested models
+########
+
+#start with very significant variables from full model and step through
+fit1<-lm(logmass~logegg, data=bird_data_transform)
+summary(fit1)
+
+fit2<-lm(logmass~logwing+logegg, data=bird_data_transform)
+summary(fit2)
+anova(fit2, fit1)
+
+fit3<-lm(logmass~logwing+logegg+logtarsus, data=bird_data_transform)
+summary(fit3)
+anova(fit3, fit2)
+
+fit4<-lm(logmass~logwing+logegg+logtarsus+Clutch_size, data=bird_data_transform)
+summary(fit4)
+anova(fit4, fit3)
+
+fit5<-lm(logmass~logwing+logegg+logtarsus+Clutch_size+Display, data=bird_data_transform)
+summary(fit5)
+anova(fit5, fit4)
+
+fit6<-lm(logmass~logwing+logegg+logtarsus+Clutch_size+Display+tail, data=bird_data_transform)
+summary(fit6)
+anova(fit6, fit5)
+
+fit7<-lm(logmass~logwing+logegg+logtarsus+Clutch_size+Display+tail+Mating_System, data=bird_data_transform)
+summary(fit7)
+anova(fit7, fit6)
+
+fit8<-lm(logmass~logwing+logegg+logtarsus+Clutch_size+Display+tail+Mating_System+logbill, data=bird_data_transform)
+summary(fit8)
+anova(fit8, fit7)
+
+#####
+#7 fold CV error rates
+#####
+
+CV_error_vec<-c()
+modellist<-list(fit1, fit2, fit3, fit4, fit5, fit6, fit7, fit8, fit_t)
+for (i in 1:length(modellist)){
+  a<-cv.lm(bird_data_transform, modellist[[i]], m=7, plotit=FALSE, seed=47)
+  CV_error=sqrt(sum((a$cv-a$logmass)^2)/nrow(a))
+  CV_error_vec<-c(CV_error_vec, CV_error)
+}
+
+plot(CV_error_vec, type="b", main="Effect of number of predictors on 7-fold CV Error", xlab="Number of Variables", ylab="CV Error")
+abline(h=min(CV_error_vec), col="red", lty=2)
+
+#6 variable model achieves lowest CV error
+
+#####
+#AIC for model selection
+#####
+#Use Akaike's Information Criterion to for model selection
+AIC_fit<-stepAIC(fit_t, direction="backward")
+summary(AIC_fit)
+
+###AIC yields 7 variable model
+###ANOVA and CV yield 6 variable model
+
+###I choose the 6 variable model because it is simpler and shows better prediction. The additional variable that AIC suggests won't appreciably change the model.
+```
+
+```{r, eval=F, cache=T, echo=F}
+final_model<-lm(logmass~logwing+logegg+logtarsus+Clutch_size+Display+tail, data=bird_data_transform)
+summary(final_model)
+layout(matrix(c(1,2,3,4),2,2))
+plot(final_model)
+```
+
+```{r, eval=F, cache=T, echo=F}
+#generate predictions based on other variables
+test<-bird_charac_encode[complete.cases(bird_charac_encode)==FALSE,]
+test<-test %>% dplyr::select(c(English_name, mass, wing, tarsus, Clutch_size, Egg_mass, Display, tail))
+test<-test[complete.cases(test),]
+```
+
+
+
